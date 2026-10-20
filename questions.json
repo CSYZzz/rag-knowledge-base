@@ -1,0 +1,65 @@
+{
+  "_说明": "评测集。keywords 用于自动判断检索结果里是否真的含答案，不依赖 LLM 生成，所以可以快速跑多组配置对比。keywords 必须取自文档原文片段。type: fact=事实查询 / multi_hop=需要推理 / unanswerable=文档里没有答案，应回答未提及（不计入 Top1 命中率）",
+  "source": "测试文档.txt",
+  "questions": [
+    {"id": 1,  "type": "fact", "q": "TC-200 的主控芯片是什么", "section": "一、产品概述", "keywords": ["STM32F103C8T6"]},
+    {"id": 2,  "type": "fact", "q": "主控芯片的工作主频是多少", "section": "一、产品概述", "keywords": ["72MHz"]},
+    {"id": 3,  "type": "fact", "q": "芯片的 Flash 和 SRAM 有多大", "section": "一、产品概述", "keywords": ["64KB Flash"]},
+    {"id": 4,  "type": "fact", "q": "TC-200 由哪几个部分组成", "section": "一、产品概述", "keywords": ["主控板", "继电器输出模块"]},
+    {"id": 5,  "type": "fact", "q": "这个产品适用于什么场景", "section": "一、产品概述", "keywords": ["中小型仓储"]},
+
+    {"id": 6,  "type": "fact", "q": "供电电压是多少", "section": "二、技术参数", "keywords": ["DC 12V"]},
+    {"id": 7,  "type": "fact", "q": "允许的电压波动范围是多少", "section": "二、技术参数", "keywords": ["10.8V 至 13.2V"]},
+    {"id": 8,  "type": "fact", "q": "待机功耗是多少", "section": "二、技术参数", "keywords": ["1.2W"]},
+    {"id": 9,  "type": "fact", "q": "继电器全部吸合时峰值功耗多大", "section": "二、技术参数", "keywords": ["4.5W"]},
+    {"id": 10, "type": "fact", "q": "测温范围是多少", "section": "二、技术参数", "keywords": ["-40℃ 至 125℃"]},
+    {"id": 11, "type": "fact", "q": "测量精度是多少", "section": "二、技术参数", "keywords": ["±0.5℃"]},
+    {"id": 12, "type": "fact", "q": "工作环境温度范围是多少", "section": "二、技术参数", "keywords": ["-20℃ 至 60℃"]},
+    {"id": 13, "type": "fact", "q": "存储环境温度范围是多少", "section": "二、技术参数", "keywords": ["-40℃ 至 85℃"]},
+    {"id": 14, "type": "fact", "q": "RS485 的默认波特率是多少", "section": "二、技术参数", "keywords": ["9600"]},
+    {"id": 15, "type": "fact", "q": "出厂默认的采样周期是多久一次", "section": "二、技术参数", "keywords": ["出厂默认 2 秒"]},
+    {"id": 16, "type": "fact", "q": "继电器单路最大负载是多少", "section": "二、技术参数", "keywords": ["10A / 250VAC"]},
+    {"id": 17, "type": "fact", "q": "显示屏是什么规格", "section": "二、技术参数", "keywords": ["0.96 寸 OLED"]},
+
+    {"id": 18, "type": "fact", "q": "设备应该安装在什么位置", "section": "三、安装说明", "keywords": ["通风良好"]},
+    {"id": 19, "type": "fact", "q": "固定螺丝的扭矩上限是多少", "section": "三、安装说明", "keywords": ["0.6N·m"]},
+    {"id": 20, "type": "fact", "q": "温度传感器探头离继电器模块至少要多远", "section": "三、安装说明", "keywords": ["15 厘米"]},
+    {"id": 21, "type": "fact", "q": "RS485 总线的终端电阻是多少欧", "section": "三、安装说明", "keywords": ["120 欧姆"]},
+    {"id": 22, "type": "fact", "q": "总线长度超过多少米需要降速", "section": "三、安装说明", "keywords": ["100 米"]},
+
+    {"id": 23, "type": "fact", "q": "怎么进入设置模式", "section": "四、操作说明", "keywords": ["短按 SET 键"]},
+    {"id": 24, "type": "fact", "q": "怎么恢复出厂设置", "section": "四、操作说明", "keywords": ["长按 SET 键 3 秒"]},
+    {"id": 25, "type": "fact", "q": "恢复出厂设置后上限和下限分别是多少", "section": "四、操作说明", "keywords": ["上限为 30℃"]},
+    {"id": 26, "type": "fact", "q": "回差的默认值是多少", "section": "四、操作说明", "keywords": ["回差默认为 2℃"]},
+    {"id": 27, "type": "fact", "q": "什么时候会输出制冷信号", "section": "四、操作说明", "keywords": ["继电器 1 吸合"]},
+
+    {"id": 28, "type": "fact", "q": "OLED 无显示但电源指示灯亮是什么原因", "section": "五、故障诊断", "keywords": ["排线接触不良"]},
+    {"id": 29, "type": "fact", "q": "温度读数明显偏低而且长期不变是什么原因", "section": "五、故障诊断", "keywords": ["传感器开路"]},
+    {"id": 30, "type": "fact", "q": "RS485 通信失败怎么排查", "section": "五、故障诊断", "keywords": ["A、B 线未接反"]},
+    {"id": 31, "type": "fact", "q": "继电器频繁动作是什么原因", "section": "五、故障诊断", "keywords": ["回差设置是否过小"]},
+    {"id": 32, "type": "fact", "q": "设备地址的取值范围是多少", "section": "五、故障诊断", "keywords": ["1 至 247"]},
+
+    {"id": 33, "type": "fact", "q": "整机保修期是多久", "section": "六、保修政策", "keywords": ["24 个月"]},
+    {"id": 34, "type": "fact", "q": "传感器探头的保修期是多久", "section": "六、保修政策", "keywords": ["12 个月"]},
+    {"id": 35, "type": "fact", "q": "哪些情况不在保修范围内", "section": "六、保修政策", "keywords": ["私自拆机"]},
+    {"id": 36, "type": "fact", "q": "保修期外维修的检测费是多少", "section": "六、保修政策", "keywords": ["50 元"]},
+
+    {"id": 37, "type": "fact", "q": "串口指令采用什么格式", "section": "七、通信协议", "keywords": ["ASCII"]},
+    {"id": 38, "type": "fact", "q": "读取当前温度用什么指令", "section": "七、通信协议", "keywords": ["READ_TEMP"]},
+    {"id": 39, "type": "fact", "q": "设置温度上限用什么指令", "section": "七、通信协议", "keywords": ["SET_HIGH"]},
+    {"id": 40, "type": "fact", "q": "输入错误的指令会返回什么", "section": "七、通信协议", "keywords": ["ERR:CMD"]},
+
+    {"id": 41, "type": "fact", "q": "建议多久校准一次温度读数", "section": "八、维护建议", "keywords": ["6 个月"]},
+    {"id": 42, "type": "fact", "q": "外壳清洁可以用酒精吗", "section": "八、维护建议", "keywords": ["不得使用酒精"]},
+
+    {"id": 43, "type": "multi_hop", "q": "设备能装在室外吗", "section": "三、安装说明", "keywords": ["避免阳光直射"]},
+    {"id": 44, "type": "multi_hop", "q": "如果仓库夏天温度到 40 度，设备还能正常工作吗", "section": "二、技术参数", "keywords": ["-20℃ 至 60℃"]},
+    {"id": 45, "type": "multi_hop", "q": "为什么继电器会自己反复启停", "section": "五、故障诊断", "keywords": ["回差设置是否过小"]},
+    {"id": 46, "type": "multi_hop", "q": "安装在继电器旁边会不会影响测温", "section": "三、安装说明", "keywords": ["继电器自身发热"]},
+
+    {"id": 47, "type": "unanswerable", "q": "设备支持 WiFi 联网吗", "section": "", "keywords": []},
+    {"id": 48, "type": "unanswerable", "q": "这个设备有多重", "section": "", "keywords": []},
+    {"id": 49, "type": "unanswerable", "q": "有没有手机 App 可以远程控制", "section": "", "keywords": []},
+    {"id": 50, "type": "unanswerable", "q": "支持 Modbus 协议吗", "section": "", "keywords": []}
+  ]
+}
