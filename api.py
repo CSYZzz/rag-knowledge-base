@@ -117,6 +117,24 @@ def _hits_to_chunks(hits):
 
 # ============ 接口 ============
 
+@app.get("/", summary="接口索引")
+def root():
+    """根路径给个索引，避免访问 127.0.0.1:8000 看到 404 以为服务没起来。"""
+    return {
+        "service": "企业知识库问答 API",
+        "docs": "/docs",
+        "endpoints": {
+            "GET  /health": "健康检查",
+            "GET  /stats": "知识库统计",
+            "POST /search": "只检索不生成",
+            "POST /chat": "固定 RAG（非流式）",
+            "POST /chat/stream": "固定 RAG（SSE 流式）",
+            "POST /agent/stream": "Agentic RAG（SSE 流式）",
+            "POST /documents": "按服务器本地路径入库",
+        },
+    }
+
+
 @app.get("/health", summary="健康检查")
 def health():
     """部署后第一件事就是打这个接口，确认服务活着、库里有内容。"""
