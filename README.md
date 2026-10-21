@@ -140,9 +140,8 @@ RAG项目/
 ├── questions.json      50 题评测集，每题标注答案关键词与所属章节
 ├── 测试文档.txt         评测用文档（自建，覆盖 8 类可检索事实）
 ├── requirements.txt
-├── vector_store/       向量库落盘目录（vectors.npy + meta.json）
 ├── 项目详解_面试版.html   完整技术说明 + 15 个面试追问的答法
-└── 进度.md             开发过程记录：每阶段的实测数据与缺陷分析
+└── vector_store/       向量库落盘目录（首次 load 时自动生成，不入库）
 ```
 
 ---
