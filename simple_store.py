@@ -135,7 +135,8 @@ class SimpleStore:
             self.clear()
 
         self.vectors = v if self.vectors is None else np.vstack([self.vectors, v])
-        for i, t in enumerate(texts):
+        # 块号从 1 开始，和用户看到的"第 N 块"一致，避免界面上出现"第 0 块"
+        for i, t in enumerate(texts, 1):
             self.meta.append({"source": source, "chunk": i, "text": t})
         self.save()
 

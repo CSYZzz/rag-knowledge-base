@@ -65,6 +65,47 @@
 **关键设计：两路召回各自取 10 个候选，RRF 融合后再由重排器压到 4 个。**
 粗筛求"不漏"，精排求"排对"，两个阶段的目标不同，所以用两套机制。
 
+### 服务层（对外提供）
+
+```
+                  ┌──────────────────────┐
+                  │   Streamlit 界面      │  app.py
+                  │   上传 / 对话 / 引用   │
+                  └──────────┬───────────┘
+                             │
+┌────────────────────────────┴────────────────────────────┐
+│  FastAPI 服务  api.py                                    │
+│  /search   只检索不生成（调试用）                          │
+│  /chat     固定 RAG，非流式                               │
+│  /chat/stream   固定 RAG，SSE 流式                        │
+│  /agent/stream  Agentic RAG，模型自主调用工具，SSE         │
+│  /health  /stats  /documents                            │
+└────────────────────────────┬────────────────────────────┘
+                             │
+                  ┌──────────┴───────────┐
+                  │  检索与生成核心        │  minimal_rag.py
+                  │  hybrid.py            │
+                  └──────────────────────┘
+                             │
+                  ┌──────────┴───────────┐
+                  │  工具层（Function     │  tools.py
+                  │  Calling）            │
+                  │  search_knowledge     │
+                  │  list_sections        │
+                  │  fetch_chunk          │
+                  └──────────────────────┘
+```
+
+**两种检索模式并存**，不是替代关系：
+
+| 模式 | 链路 | 何时用 |
+|---|---|---|
+| 固定 RAG | 问题 → 检索 4 块 → 生成 | 默认。快（2–3 秒）、便宜、结果可复现，能用评测量化 |
+| Agentic RAG | 问题 → 模型判断 → 调工具（可多轮）→ 生成 | 复杂/多跳问题。慢（5–20 秒）、贵，但能自己换关键词重试 |
+
+固定 RAG 是主力，因为它可评测；Agent 是补充，用来处理"第一次检索没命中该怎么办"。
+**这也是一个真实的设计取舍：可观测性 vs 上限。**
+
 ---
 
 ## 三、评测结果
@@ -108,6 +149,22 @@ python minimal_rag.py 保修期是多久
 python eval.py --compare
 ```
 
+### 三种用法，按需要选
+
+```bash
+# A. 命令行（调试最快，改代码时用这个）
+python minimal_rag.py 保修期是多久
+python tools.py 如果设备装在室外，保修还有效吗      # Agent 模式，会打印工具调用过程
+
+# B. HTTP 服务（给别的系统调用）
+uvicorn api:app --reload --port 8000
+# 打开 http://127.0.0.1:8000/docs 查看自动生成的接口文档，可以直接点着测
+
+# C. 网页界面（给别人演示）
+streamlit run app.py
+# 打开 http://localhost:8501，在左侧栏填 API Key、上传文档
+```
+
 其他命令：
 
 ```bash
@@ -137,6 +194,9 @@ RAG项目/
 ├── hybrid.py           BM25 + RRF 融合 + Reranker（llm / cross / none 三后端）
 ├── simple_store.py     自写向量库（numpy 矩阵乘 + L2 归一化），含 HashEmbedder 降级方案
 ├── eval.py             评测脚本，支持 --compare 消融对比与 -v 失败明细
+├── tools.py            Function Calling 工具层 + Agentic RAG 循环
+├── api.py              FastAPI 服务：/search、/chat、SSE 流式、Agent 流式
+├── app.py              Streamlit 界面：上传、对话、引用溯源、模式切换
 ├── questions.json      50 题评测集，每题标注答案关键词与所属章节
 ├── 测试文档.txt         评测用文档（自建，覆盖 8 类可检索事实）
 ├── requirements.txt
@@ -157,6 +217,9 @@ RAG项目/
 | 融合 | **RRF（k=60）** | 向量相似度是 0~1 的点积，BM25 分数是无上界实数，两路量纲不同，加权求和必须调权重。RRF 只用排名倒数 `1/(k+rank)`，天然跨尺度，**免调参**，且对异常分数更鲁棒 |
 | 重排 | LLM 重排（默认） | cross-encoder 效果更好但需下载 1.1GB 且 CPU 上慢；DeepSeek 的排序质量已足够，且零下载成本。保留 `cross` 后端可随时切换对比 |
 | 温度 | 0.2 | 事实型问答要稳定复现，不需要创造性 |
+| 流式协议 | **SSE** | 只有服务端往客户端推 token，单向就够。WebSocket 是双向协议，要握手升级、要额外端口，这里属于过度设计。SSE 基于普通 HTTP，网关直接支持，断线自动重连 |
+| Agent 化 | **Function Calling** | 三个工具对应真实 Agent 的三种动作：不确定去哪找时 `search_knowledge`、知道大概在哪章时 `list_sections`、确定是哪块时 `fetch_chunk`。比把整库塞进上下文便宜得多，也比固定检索多一次"换词重试"的机会 |
+| 工具阶段不流式 | 先非流式跑完工具，最后一次生成才开 stream | `tool_calls` 返回的是 JSON 字符串，必须等完整才能解析。边收边解会拿到半个 JSON，容错成本远高于收益。用户感知的延迟只来自最后一段 |
 
 ---
 
@@ -203,15 +266,35 @@ RAG项目/
 
 **教训**：小样本评测的方差大到毫无意义。4 道题错 1 道就是 25 个百分点。**样本量不够的指标，比没有指标更危险**，因为它会让人做出错误决策。
 
+### 4. 流式接口返回 HTTP 200，但 body 是空的
+
+**现象**：`curl -N POST /chat/stream` 拿到 200 和正确的 `content-type: text/event-stream`，然后一个字节都没有，连接直接断掉。curl 退出码 18（`CURLE_PARTIAL_FILE`）。
+
+**定位**：问题不在 SSE，在序列化。代码里 `_sse()` 对 payload 做 `json.dumps`，而 `_hits_to_chunks()` 返回的是 Pydantic 模型列表——`json.dumps` 不认识 `BaseModel`，抛 `TypeError`。关键在于**异常发生在第一个 `yield` 之前**：
+
+- 此时 HTTP 状态码 200 已经发出去了，没法再改成 500
+- `StreamingResponse` 的生成器抛异常时，客户端只能看到"连接被关闭"
+- 所以症状是"成功但空"，而不是"报错"
+
+**修复**：入口处统一把检索结果转成 `dict` 再往下传；同时把整个生成器体包进 `try/except`，出错时发一个 `error` 事件出去，让前端能显示"出错了"而不是一直转圈。
+
+**提炼出两条经验**：
+1. **流式接口的异常处理必须前置**。一旦开始推流，状态码就锁死了，所有错误只能当数据发。所以"先把能失败的事情都做完，再开始 yield"。
+2. **`200 + 空响应` 比 `500` 更难查一个数量级**。凡是"接口通了但没内容"，先怀疑序列化，再怀疑网络。
+
 ---
 
 ## 九、后续计划
 
-- [ ] Streamlit 界面：上传文档 + 对话 + 引用溯源可点击
+- [x] FastAPI 服务：/search、/chat、SSE 流式、Agent 流式
+- [x] Function Calling 工具层 + Agentic RAG（模型自主决定检索几次）
+- [x] Streamlit 界面：上传文档 + 对话 + 引用溯源 + 模式切换
+- [ ] 部署到公网，给一个能点开的链接
 - [ ] 补齐 PDF/Word 解析与页眉页脚清洗
 - [ ] 接入 cross-encoder 重排，做 LLM vs CrossEncoder 的效果/成本对比
 - [ ] 扩充到多文档场景，测文档级过滤的收益
 - [ ] 用 LLM 当裁判，补一版"回答准确率"指标
+- [ ] **对比固定 RAG 与 Agentic RAG 在同一套 50 题上的表现**（代价：每题多次 API 调用）
 
 ---
 
