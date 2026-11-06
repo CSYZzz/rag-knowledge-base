@@ -1,0 +1,36 @@
+# 构建镜像时排除的东西。每一条都对应镜像体积或构建时间。
+#
+# 注意：**vector_store/ 不能排除** —— 索引是在本地建好、随镜像一起打包的。
+# 这也决定了部署形态：索引不可变，换文档要重新构建镜像。
+# 这样做的理由：免费层没有持久磁盘，放运行时目录重启就丢，
+# 而索引只有几十 KB，打进镜像最稳。
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+.git/
+.gitignore
+.gitattributes
+
+.venv/
+venv/
+.venv-deploy/
+env/
+ENV/
+
+uploads/
+.env
+.env.*
+
+*.md
+*.html
+测试文档.txt
+
+# 本地开发用，线上不跑
+app.py
+eval.py
+questions.json
+progress.md

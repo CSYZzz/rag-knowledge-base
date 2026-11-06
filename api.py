@@ -39,10 +39,11 @@ import json
 import os
 import time
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+import metrics
 import minimal_rag as rag
 import tools as agent_tools
 
@@ -113,6 +114,134 @@ def _hits_to_chunks(hits):
         }
         for t, m, s in hits
     ]
+
+
+# ============ 可观测性中间件 ============
+
+def _client_ip(request: Request) -> str:
+    """
+    反向代理后面必读 X-Forwarded-For。
+
+    Render / Nginx 这类部署里，request.client.host 永远是代理的 IP。
+    不读这个头，所有访客会被算成同一个 IP —— 限流就从"防刷"变成
+    "一个人访问 20 次，全站锁死"。这是上线后才暴露的典型问题。
+    """
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.middleware("http")
+async def observe(request: Request, call_next):
+    path = request.url.path
+
+    # 健康检查和监控数据自己不计入统计、不消耗限流额度，
+    # 否则 UptimeRobot 每分钟探活几次，就把正常用户的额度吃光了。
+    if path in ("/health", "/admin/stats"):
+        return await call_next(request)
+
+    ip = _client_ip(request)
+    if not metrics.allow(ip):
+        metrics.record(path, 429, 0.0, ip, "限流")
+        return JSONResponse(
+            {"detail": f"请求过于频繁，每分钟最多 {metrics.RATE_LIMIT_PER_MIN} 次"},
+            status_code=429,
+        )
+
+    t0 = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        metrics.record(path, 500, (time.perf_counter() - t0) * 1000, ip, "未捕获异常")
+        raise
+
+    elapsed = (time.perf_counter() - t0) * 1000
+    metrics.record(path, response.status_code, elapsed, ip)
+    response.headers["X-Response-Time-Ms"] = f"{elapsed:.0f}"
+    return response
+
+
+# ============ 监控面板 ============
+
+ADMIN_HTML = """<!doctype html>
+<meta charset="utf-8"><title>RAG 服务监控</title>
+<style>
+ body{font:14px/1.6 -apple-system,"Segoe UI",sans-serif;margin:0;padding:24px;color:#1c1c1a;background:#f7f6f3}
+ h1{font-size:17px;font-weight:600;margin:0 0 4px}
+ .sub{color:#6b6a65;font-size:12px;margin-bottom:20px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+ .card{background:#fff;border:1px solid #e5e3dc;border-radius:10px;padding:14px 16px}
+ .lab{font-size:12px;color:#6b6a65}
+ .val{font-size:24px;font-weight:600;margin-top:2px}
+ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e3dc;border-radius:10px;overflow:hidden}
+ th{text-align:left;font-size:12px;font-weight:500;color:#6b6a65;padding:8px 12px;border-bottom:1px solid #e5e3dc}
+ td{padding:7px 12px;border-bottom:1px solid #f0eee8;font-size:13px}
+ .ok{color:#3b6d11}.bad{color:#a32d2d}.warn{color:#854f0b}
+ .mono{font-family:ui-monospace,Consolas,monospace}
+</style>
+<h1>企业知识库问答 · 服务监控</h1>
+<div class="sub" id="sub">正在加载…</div>
+<div class="grid">
+  <div class="card"><div class="lab">总请求</div><div class="val" id="total">–</div></div>
+  <div class="card"><div class="lab">P95 延迟</div><div class="val" id="p95">–</div></div>
+  <div class="card"><div class="lab">错误率</div><div class="val" id="err">–</div></div>
+  <div class="card"><div class="lab">累计成本</div><div class="val" id="cost">–</div></div>
+</div>
+<div class="grid">
+  <div class="card"><div class="lab">输入 token</div><div class="val" id="tin">–</div></div>
+  <div class="card"><div class="lab">输出 token</div><div class="val" id="tout">–</div></div>
+  <div class="card"><div class="lab">模型调用</div><div class="val" id="calls">–</div></div>
+  <div class="card"><div class="lab">向量化后端</div><div class="val" id="emb" style="font-size:15px;line-height:1.4">–</div></div>
+</div>
+<table><thead><tr><th>时间</th><th>接口</th><th>状态</th><th>耗时</th><th>来源 IP</th></tr></thead>
+<tbody id="rows"><tr><td colspan="5" style="color:#6b6a65">暂无请求</td></tr></tbody></table>
+<script>
+const $=id=>document.getElementById(id);
+async function tick(){
+  try{
+    const r=await fetch('/admin/stats');const d=await r.json();
+    $('sub').textContent=`已运行 ${Math.round(d.uptime_sec/60)} 分钟 · 限流 ${d.rate_limit_per_min} 次/分钟/IP · 知识库 ${d.chunks} 块`;
+    $('total').textContent=d.requests.total;
+    $('p95').textContent=d.latency_ms.p95+' ms';
+    const e=d.requests.total?(d.requests.error/d.requests.total*100):0;
+    $('err').textContent=e.toFixed(1)+' %';
+    $('err').className='val '+(e>5?'bad':'ok');
+    $('cost').textContent=d.price_configured?('¥'+d.cost_cny.toFixed(3)):'未配单价';
+    $('cost').style.fontSize=d.price_configured?'24px':'14px';
+    $('tin').textContent=d.tokens.prompt;
+    $('tout').textContent=d.tokens.completion;
+    $('calls').textContent=d.tokens.llm_calls;
+    $('emb').textContent=d.embedder;
+    $('rows').innerHTML=d.recent.length?d.recent.slice().reverse().map(x=>
+      `<tr><td class="mono">${new Date(x.t*1000).toLocaleTimeString()}</td>
+       <td class="mono">${x.path}</td>
+       <td class="${x.status<400?'ok':x.status==429?'warn':'bad'}">${x.status}</td>
+       <td class="mono">${x.ms} ms</td>
+       <td class="mono">${x.ip}</td></tr>`).join(''):'<tr><td colspan="5">暂无请求</td></tr>';
+  }catch(e){$('sub').textContent='监控数据读取失败：'+e;}
+}
+tick();setInterval(tick,3000);
+</script>
+"""
+
+
+@app.get("/admin", response_class=HTMLResponse, summary="监控面板")
+def admin_page():
+    """给运维和演示用的可视化面板，和 /docs 互补：那个测功能，这个看运行状态。"""
+    return ADMIN_HTML
+
+
+@app.get("/admin/stats", summary="监控数据（JSON）")
+def admin_stats():
+    store = rag.get_store()
+    embedder = rag.get_embedder()
+    return metrics.snapshot({
+        "chunks": store.count(),
+        "embedder": rag.embedder_name(),
+        "embed_api_calls": getattr(embedder, "calls", 0),
+        "degraded": rag._degraded,
+    })
 
 
 # ============ 接口 ============
@@ -206,6 +335,7 @@ def chat(req: ChatRequest):
         messages=[{"role": "user", "content": rag.build_prompt(req.question, hits)}],
         temperature=0.2,
     )
+    metrics.record_tokens(resp.usage.prompt_tokens, resp.usage.completion_tokens)
 
     return {
         "question": req.question,
@@ -239,8 +369,17 @@ def chat_stream(req: ChatRequest):
                 messages=[{"role": "user", "content": rag.build_prompt(req.question, hits)}],
                 temperature=0.2,
                 stream=True,
+                # 流式默认拿不到 token 用量，必须显式要。
+                # 开了之后最后一个 chunk 只带 usage、choices 是空列表，
+                # 直接 chunk.choices[0] 会 IndexError —— 这是加计费时最容易踩的坑。
+                stream_options={"include_usage": True},
             )
             for chunk in stream:
+                if not chunk.choices:
+                    usage = getattr(chunk, "usage", None)
+                    if usage:
+                        metrics.record_tokens(usage.prompt_tokens, usage.completion_tokens)
+                    continue
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield _sse("token", delta)

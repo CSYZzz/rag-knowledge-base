@@ -1,0 +1,29 @@
+# 二进制文件：禁止换行符转换和文本 diff。
+# vectors.npy 是检索索引，被 CRLF 转换一次，向量数据就废了，
+# 而且症状是"服务能启动、检索结果全错"，最难排查的那一类。
+*.npy binary
+*.png binary
+*.jpg binary
+*.pdf binary
+*.woff2 binary
+
+# 统一以 LF 存储，跨平台一致。
+# 显式声明之后，Git 不会再对每次 add 弹 "LF will be replaced by CRLF" 警告。
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.svg  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.txt  text eol=lf
+*.sh   text eol=lf
+
+# Dockerfile 和 requirements 必须是 LF。
+# CRLF 的 Dockerfile 在部分构建环境下会被解析失败，这是部署阶段最不值当的坑。
+Dockerfile          text eol=lf
+*.dockerignore      text eol=lf
+*.prod.txt          text eol=lf
+
+# Windows 批处理反过来，必须 CRLF，否则 cmd 会把行首字符吃掉。
+*.bat text eol=crlf
+*.cmd text eol=crlf

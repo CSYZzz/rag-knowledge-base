@@ -47,6 +47,11 @@ RERANK_MODE    = os.environ.get("RERANK_MODE", "llm")
 # BGE 模型检索时，query 需要加这个前缀，效果明显更好（官方要求）
 QUERY_PREFIX = "为这个句子生成表示以用于检索相关文章："
 
+# 向量化后端：local = 本地 sentence-transformers；remote = 调免费 embedding API
+# 线上（512MB 免费层）必须用 remote，因为装不下 torch；本地开发保持 local 即可
+# 切换方式：set EMBED_BACKEND=remote  （或 Dockerfile 里写死）
+EMBED_BACKEND = os.environ.get("EMBED_BACKEND", "local").lower()
+
 
 # ============ 1. 文档解析 ============
 
@@ -223,6 +228,22 @@ def get_embedder():
     if _embedder is not None:
         return _embedder
 
+    # ---------- 第一层：远程 API（线上环境）----------
+    # 免费部署层只有 512MB 内存，torch + BGE 常驻 500MB+ 会被 OOM 杀掉，
+    # 所以线上把向量化外包给免费 API。这一层不占本地内存。
+    if EMBED_BACKEND in ("remote", "auto"):
+        try:
+            from remote_embed import RemoteEmbedder
+            _embedder = RemoteEmbedder()
+            # bge-m3 不需要 bge-zh 那句中文 instruction 前缀，加了反而掉点
+            _needs_prefix = False
+            print(f"向量化后端：{_embedder.backend_name()}（不占本地内存）\n")
+            return _embedder
+        except Exception as e:
+            print(f"[提示] 远程 embedding 不可用：{type(e).__name__}: {e}")
+            print("[降级] 继续尝试本地模型……")
+
+    # ---------- 第二层：本地模型 ----------
     try:
         from sentence_transformers import SentenceTransformer
         print(f"正在加载 embedding 模型 {EMBED_MODEL} ...")
@@ -231,6 +252,7 @@ def get_embedder():
         _needs_prefix = True
         print("模型加载完成：使用 BGE 语义向量。\n")
     except Exception as e:
+        # ---------- 第三层：哈希降级 ----------
         print(f"[提示] 加载 {EMBED_MODEL} 失败：{type(e).__name__}: {e}")
         print("[降级] 改用字符 2-gram 哈希检索，不下载任何模型。")
         print("       效果弱一些，但整条流程完全一样。\n")
@@ -244,7 +266,13 @@ def get_embedder():
 def embedder_name() -> str:
     """当前实际用的是哪个 embedding，评测报告必须标明，否则数字没有可比性。"""
     get_embedder()
-    return "BGE语义向量" if not _degraded else "哈希降级(非BGE)"
+    if _degraded:
+        return "哈希降级(非BGE)"
+    # 远程后端自己知道自己是哪个模型，直接问它
+    name_fn = getattr(_embedder, "backend_name", None)
+    if callable(name_fn):
+        return name_fn()
+    return "BGE语义向量"
 
 
 def embed(texts, is_query: bool = False):

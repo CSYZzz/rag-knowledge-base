@@ -1,0 +1,30 @@
+# Render 一键部署描述文件（Blueprint）
+#
+# 用法：Render 控制台 → New + → Blueprint → 选这个仓库，它会读这个文件。
+# 标了 sync: false 的变量不会写进仓库，部署时在面板里填，密钥不会进 Git。
+
+services:
+  - type: web
+    name: rag-kb-service
+    runtime: docker
+    plan: free
+    # 新加坡离国内最近。如果免费层不支持该区域报错，改成 oregon 或删掉这一行
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: EMBED_BACKEND
+        value: remote
+      - key: SILICONFLOW_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: RATE_LIMIT_PER_MIN
+        value: "20"
+      # 单价按官网实时价格填，单位：元 / 百万 token。
+      # 不写死是因为价格会变，写错的数字比不写更糟。
+      - key: PRICE_IN_PER_M
+        sync: false
+      - key: PRICE_OUT_PER_M
+        sync: false

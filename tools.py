@@ -252,9 +252,20 @@ def run_agent(question: str, max_turns: int = 4, model: str = "deepseek-chat"):
         messages=messages,
         temperature=0.2,
         stream=True,
+        # 同上：要计费就得显式要 usage，且末尾 chunk 的 choices 为空要先判空
+        stream_options={"include_usage": True},
     )
     collected = []
     for chunk in stream:
+        if not chunk.choices:
+            usage = getattr(chunk, "usage", None)
+            if usage:
+                try:
+                    import metrics
+                    metrics.record_tokens(usage.prompt_tokens, usage.completion_tokens)
+                except Exception:
+                    pass
+            continue
         delta = chunk.choices[0].delta.content
         if delta:
             collected.append(delta)

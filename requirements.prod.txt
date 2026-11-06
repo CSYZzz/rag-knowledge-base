@@ -1,0 +1,12 @@
+# 线上运行依赖 —— 刻意不含 sentence-transformers / torch / streamlit
+#
+# 为什么要单独拆一份：
+#   线上 512MB 内存跑 torch 必 OOM，镜像也会从 200MB 涨到 2GB。
+#   依赖清单就是一份技术决策文档：看到这里没有 torch，
+#   面试官会问"你怎么做向量化"——那就是你要讲远程 embedding 的地方。
+
+numpy>=1.26.0
+openai>=1.40.0
+pypdf>=4.2.0
+fastapi>=0.110.0
+uvicorn>=0.27.0
